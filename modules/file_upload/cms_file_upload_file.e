@@ -9,26 +9,35 @@ class
 
 inherit
 	WSF_UPLOADED_FILE
-		redefine
-			name
+		rename
+			make as make_uploaded_file,
+			name as uploaded_file_name,
+			change_name as change_uploaded_file_name,
+			is_empty as is_empty_uploaded_file,
+			exists as uploaded_file_exists
 		end
 
 	RAW_FILE
-		undefine
-			make, change_name, is_empty, exists
+		rename
+			make as make_file
 		end
+--		undefine
+--			make, change_name, is_empty, exists
+--		end
 
 create
-	make_new,
-	make_with_path
+	make
 
 feature -- Initialization
 
-	make_new (a_name: READABLE_STRING_GENERAL; a_filename: READABLE_STRING_GENERAL; a_content_type: like content_type; a_size: like size; a_user: CMS_USER)
+	make (a_name: READABLE_STRING_GENERAL; a_filename: READABLE_STRING_GENERAL; a_content_type: like content_type; a_size: like size; a_user: CMS_USER)
 		local
 			time: DATE_TIME
 		do
-			new_name := a_name.as_string_32
+			make_uploaded_file (a_name, a_filename, a_content_type, a_size)
+			make_with_name (a_filename)
+
+			uploaded_file_name := a_name.as_string_32
 			url_encoded_name := url_encoded_string (a_name)
 			filename := a_filename.as_string_32
 			content_type := a_content_type

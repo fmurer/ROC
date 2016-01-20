@@ -94,7 +94,7 @@ feature -- CMS modules
 			a_setup.register_module (m)
 
 				-- uploader
-			create {CMS_FILE_UPLOAD} m.make
+			create {CMS_FILE_UPLOADER_MODULE} m.make
 			a_setup.register_module (m)
 		end
 
