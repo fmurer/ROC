@@ -18,9 +18,21 @@ feature -- Access
 
 	uploads_directory_name: STRING = "uploaded_files"
 
+	metadata_directory_name: STRING = ".metadata"
+
 	uploads_location: PATH
 		do
 			Result := cms_api.files_location.extended (uploads_directory_name)
+		end
+
+	metadata_location: PATH
+		do
+			Result := uploads_location.extended (metadata_directory_name)
+		end
+
+	style_location: PATH
+		do
+			Result := cms_api.module_location_by_name ("file_uploader").extended ("site/files/css/style_upload.css")
 		end
 
 	file_link (f: CMS_FILE): CMS_LOCAL_LINK
@@ -57,22 +69,48 @@ feature -- Storage
 			p: PATH
 			ut: FILE_UTILITIES
 			stored: BOOLEAN
+			original_name: STRING_32
+			counter: INTEGER_32
+			finished: BOOLEAN
 		do
 			reset_error
+			create original_name.make_from_string (f.filename)
+
 			p := f.location
 			if p.is_absolute then
 			else
 				p := uploads_location.extended_path (p)
 			end
+
 			if ut.file_path_exists (p) then
 					-- FIXME: find an alternative name for it, by appending  "-" + i.out , with i: INTEGER;
-				error_handler.add_custom_error (-1, "uploaded file storage failed", "A file with same name already exists!")
+				from
+					counter := 1
+				until
+					finished
+				loop
+					if ut.file_path_exists (p) then
+						f.set_new_location_with_number (counter)
+						p := f.location
+						if p.is_absolute then
+						else
+							p := uploads_location.extended_path (p)
+						end
+						counter := counter + 1
+					else
+						finished := true
+					end
+				end
+				stored := f.move_to (p)
+--				error_handler.add_custom_error (-1, "uploaded file storage failed", "A file with same name already exists!")
 			else
 					-- move file to path
 				stored := f.move_to (p)
-				if not stored then
-					error_handler.add_custom_error (-1, "uploaded file storage failed", "Issue occurred when saving uploaded file!")
-				end
+
+			end
+
+			if not stored then
+				error_handler.add_custom_error (-1, "uploaded file storage failed", "Issue occurred when saving uploaded file!")
 			end
 		end
 

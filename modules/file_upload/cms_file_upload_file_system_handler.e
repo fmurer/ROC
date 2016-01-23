@@ -55,7 +55,7 @@ feature -- process function
 				s := "[
 					<html>
 						<head>
-							<title>Index of $URI</title>
+							<title>All uploaded files in $URI</title>
 							<style>
 								td { padding-left: 10px;}
 							</style>

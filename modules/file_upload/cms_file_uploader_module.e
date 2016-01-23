@@ -47,6 +47,8 @@ feature -- Access
 			Result.force ("upload files")
 		end
 
+
+
 feature {CMS_API} -- Module Initialization
 
 	initialize (api: CMS_API)
@@ -75,8 +77,9 @@ feature {CMS_API}-- Module management
 				if not l_sql_storage.sql_table_exists ("file_upload_table") then
 					sql := "[
 CREATE TABLE file_upload_table(
-  `id` INTEGER PRIMARY KEY AUTO_INCREMENT NOT NULL CHECK("id">=0),
+  `id` VARCHAR(255) PRIMARY KEY NOT NULL,
   `name` VARCHAR(100) NOT NULL,
+  `user` VARCHAR(100) NOT NULL,
   `uploaded_date` DATE,
   `size` INTEGER
 );
@@ -106,16 +109,9 @@ feature -- Access: router
 
 	setup_router (a_router: WSF_ROUTER; a_api: CMS_API)
 			-- <Precursor>
-		local
---			www: WSF_FILE_SYSTEM_HANDLER
 		do
 			map_uri_template_agent (a_router, "/upload/", agent execute_upload (?, ?, a_api), Void) -- Accepts any method GET, HEAD, POST, PUT, DELETE, ...
 			map_uri_template_agent (a_router, "/upload/{filename}", agent display_uploaded_file_info (?, ?, a_api), a_router.methods_get)
-
---			create www.make_with_path (document_root)
---			www.set_directory_index (<<"index.html">>)
---			www.set_not_found_handler (agent execute_not_found_handler)
---			a_router.handle("", www, a_router.methods_get)
 		end
 
 feature -- Hooks
@@ -135,23 +131,6 @@ feature -- Hooks
 				a_menu_system.primary_menu.extend (link)
 			-- end
 		end
-
---feature -- Configuration		
-
---	document_root: PATH
---			-- Document root to look for files or directories
---		once
---			Result := execution_environment.current_working_path.extended ("site")
---		end
-
---	files_root: PATH
---			-- Uploaded files will be stored in `files_root' folder
---		local
---			tmp: PATH
---		once
---			tmp := document_root.extended ("files")
---			Result := tmp.extended ("uploaded_files")
---		end
 
 feature -- Handler
 
@@ -181,7 +160,6 @@ feature -- Handler
 					f := l_file_upload_api.new_uploads_file (create {PATH}.make_from_string (fn))
 
 						-- FIXME: get CMS information related to this file ... owner, ...
-
 					body.append ("<p>Open the media <a href=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%">")
 					body.append (api.html_encoded (f.filename))
 					body.append ("</a>.</p>%N")
@@ -218,9 +196,9 @@ feature -- Handler
 
 						-- create form to choose files and upload them
 					body.append ("<form action=%"" + req.script_url ("/upload/") + "%" enctype=%"multipart/form-data%" method=%"POST%"> %N")
-					body.append ("<input name=%"file-name[]%" type=%"file%" multiple> %N")
+					body.append ("<input name=%"file-name[]%" type=%"file%" multiple>")
 					body.append ("<button type=submit>Upload</button>%N")
-					body.append ("</form>%N")
+					body.append ("</form><br>%N")
 
 					if req.is_post_request_method then
 						process_uploaded_files (req, api, body)
@@ -232,7 +210,13 @@ feature -- Handler
 					-- Build the response.
 
 				append_uploaded_file_album_to (req, api, body)
+
 				r.set_main_content (body)
+
+					-- set style
+					-- FIXME what is wrong here?
+				r.add_style (api.module_location (Current).extended ("site/files/css/style_upload.css").out, "all")
+
 			else
 				create {BAD_REQUEST_ERROR_CMS_RESPONSE} r.make (req, res, api)
 			end
@@ -240,20 +224,18 @@ feature -- Handler
 		end
 
 	process_uploaded_files (req: WSF_REQUEST; api: CMS_API; a_output: STRING)
-			-- show all uploaded files
+			-- show all newly uploaded files
 		local
---			stored: BOOLEAN
---			file_system_handler: WSF_FILE_SYSTEM_HANDLER
---			file_system_upload_handler: CMS_FILE_UPLOAD_FILE_SYSTEM_HANDLER
 			l_uploaded_file: CMS_UPLOADED_FILE
 			uf: WSF_UPLOADED_FILE
---			ut: FILE_UTILITIES
---			files_root: PATH
+			raw: RAW_FILE
+			upload_time: DATE_TIME
 		do
 			if attached file_upload_api as l_file_upload_api then
 					-- if has uploaded files, then store them
 				if req.has_uploaded_file then
-					a_output.append ("<ul class=%"uploaded-files%"><strong>Uploaded file(s):</strong>%N")
+					a_output.append ("<strong>Newly uploaded file(s): </strong>%N")
+					a_output.append ("<ul class=%"uploaded-files%">")
 					across
 						req.uploaded_files as ic
 					loop
@@ -262,15 +244,17 @@ feature -- Handler
 						a_output.append ("<li>")
 						a_output.append (api.html_encoded (l_uploaded_file.filename))
 
-							-- Record current user, ..
-							-- for now, only user, but it should also take care of uploaded time, ...
-						l_uploaded_file.set_owner (api.current_user (req))
-
+							-- store the just uploaded file
 						l_file_upload_api.save_uploaded_file (l_uploaded_file)
+
+							-- create medadata file
+						l_uploaded_file.set_size (uf.size)
+						create_metadata_file (l_uploaded_file, l_file_upload_api, req)
+
 
 							-- FIXME: display for information, about the new disk filename.
 						if l_file_upload_api.error_handler.has_error then
-							a_output.append (" <span class=%"error%">failed!</span>")
+							a_output.append (" <span class=%"error%">: upload failed!</span>")
 						end
 						a_output.append ("</li>")
 					end
@@ -285,18 +269,26 @@ feature -- Handler
 			f: CMS_FILE
 			p: PATH
 			rel: PATH
+			meta_file: RAW_FILE
+			meta_user: STRING
+			meta_time: STRING
+			meta_size: STRING
+			file_name: STRING
 		do
 			if attached file_upload_api as l_file_upload_api then
 				create rel.make_from_string (l_file_upload_api.uploads_directory_name)
 				p := api.files_location.extended_path (rel)
 
-				a_output.append ("<ul class=%"directory-index%"><strong>Index of uploads:</strong>%N")
+				a_output.append ("<strong>All uploaded files:</strong>%N")
+				a_output.append ("<table class=%"directory-index%">%N")
+				a_output.append ("<tr><th>Filename</th><th>Uploading Time</th><th>User</th><th>Size</th><th></th></tr>%N")
 
 				create d.make_with_path (p)
 				if d.exists then
 					across
 						d.entries as ic
 					loop
+
 						if ic.item.is_current_symbol then
 								-- Ignore
 						elseif ic.item.is_parent_symbol then
@@ -304,25 +296,118 @@ feature -- Handler
 						else
 							f := l_file_upload_api.new_file (rel.extended_path (ic.item))
 
-							if f.is_directory then
-								a_output.append ("<li class=%"directory%">")
-							else
-								a_output.append ("<li class=%"file%">")
-							end
-							a_output.append ("<a href=%"" + api.percent_encoded (f.filename) + "%">")
-							a_output.append (api.html_encoded (f.filename))
-							a_output.append ("</a>")
+								-- check if f is directory -> yes, then do not show
+							if not f.is_directory then
 
-							a_output.append ("( <a href=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%">")
-							a_output.append ("media</a>)")
-							a_output.append ("</li>%N")
+								create file_name.make_from_string (f.filename)
+
+	--							a_output.append ("<a href=%"" + api.percent_encoded (f.filename) + "%">")
+	--							a_output.append (api.html_encoded (f.filename))
+	--							a_output.append ("</a>")
+
+								create meta_file.make_with_path (l_file_upload_api.metadata_location.extended (file_name).appended_with_extension ("cms-metadata"))
+
+									-- read metadata out
+								if meta_file.exists and then meta_file.is_access_readable then
+									meta_file.open_read
+
+									meta_file.read_line
+									create meta_user.make_from_string (meta_file.last_string)
+
+									meta_file.read_line
+									create meta_time.make_from_string (meta_file.last_string)
+
+									meta_file.read_line
+									create meta_size.make_from_string (meta_file.last_string)
+
+									meta_file.close
+								else
+									create meta_user.make_empty
+									create meta_time.make_empty
+									create meta_size.make_empty
+								end
+								a_output.append ("<tr class=%"directory-index%">")
+
+									-- add filename
+								a_output.append ("<td>")
+								a_output.append ("<a href=%"" + api.percent_encoded (f.filename) + "%">")
+								a_output.append (api.html_encoded (f.filename))
+								a_output.append ("</a>")
+								a_output.append ("</td>%N")
+
+									-- add uploading time
+								a_output.append ("<td>")
+								if not meta_time.is_empty then
+									a_output.append (meta_time)
+								else
+									a_output.append ("NA")
+								end
+								a_output.append ("</td>%N")
+
+									-- add user
+								a_output.append ("<td>")
+								if not meta_user.is_empty then
+									a_output.append (meta_user)
+								else
+									a_output.append ("unknown user")
+								end
+								a_output.append ("</td>%N")
+
+									-- add size
+								a_output.append ("<td>")
+								if not meta_size.is_empty then
+									a_output.append (meta_size + "bytes")
+								else
+									a_output.append ("NA")
+								end
+								a_output.append ("</td>%N")
+
+
+									-- add download link
+								a_output.append ("<td>")
+								a_output.append ("<a href=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%"> download </a>")
+								a_output.append ("</td>%N")
+
+
+								a_output.append ("</tr>%N")
+							end
 						end
 					end
 				end
-				a_output.append ("</ul>%N")
+				a_output.append ("</table>%N")
 			end
 		end
 
+
+	create_metadata_file (uf: CMS_UPLOADED_FILE; api: CMS_FILE_UPLOADER_API; req: WSF_REQUEST)
+		local
+			raw: RAW_FILE
+			upload_time: DATE_TIME
+		do
+			-- create a file for metadata
+				create raw.make_with_path (api.metadata_location.extended (uf.filename).appended_with_extension ("cms-metadata"))
+
+				if raw.exists then
+					raw.open_write
+				else
+					raw.create_read_write
+				end
+					-- insert username
+				if attached api.cms_api.current_user (req) as user then
+					raw.put_string (user.name)
+					raw.put_new_line
+				end
+					-- insert uploaded_time
+				create upload_time.make_now
+				raw.put_string (upload_time.out)
+				raw.put_new_line
+
+					-- insert size of file
+				raw.put_string (uf.size.out)
+				raw.put_new_line
+
+				raw.close
+		end
 feature -- Mapping helper: uri template agent (analogue to the demo-module)
 
 	map_uri_template (a_router: WSF_ROUTER; a_tpl: STRING; h: WSF_URI_TEMPLATE_HANDLER; rqst_methods: detachable WSF_REQUEST_METHODS)
@@ -342,4 +427,5 @@ feature -- Mapping helper: uri template agent (analogue to the demo-module)
 		do
 			map_uri_template (a_router, a_tpl, create {WSF_URI_TEMPLATE_AGENT_HANDLER}.make (proc), rqst_methods)
 		end
+
 end

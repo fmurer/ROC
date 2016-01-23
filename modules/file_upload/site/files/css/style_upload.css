@@ -91,17 +91,11 @@ ul.horizontal li {
   padding: 5px 2px 5px 2px;
 }
 
-table.with_border thead td {
-  font-weight: bold;
-}
-table.with_border td {
-  border: solid 1px #ccc;
-  padding: 2px 5px 2px 5px;
-}
-
-.directory-index {
+table {
   width: 80%;
   border-collapse: collapse;
+}
+
+table, th, td {
   border: 1px solid black;
-  padding-left: 5px;
 }

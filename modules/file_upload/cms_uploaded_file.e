@@ -44,12 +44,47 @@ feature -- Access
 	owner: detachable CMS_USER
 			-- Optional owner.
 
+	upload_time: detachable DATE_TIME
+			-- time when the file was uploaded
+
+	size: detachable INTEGER_32
+			-- file size
+
 feature -- Element change
 
 	set_owner (u: detachable CMS_USER)
 			-- Set `owner' to `u'.
 		do
 			owner := u
+		end
+
+	set_time (a_time: detachable DATE_TIME)
+			-- Set `upload_time' to `a_time'
+		do
+			upload_time := a_time
+		end
+
+	set_size (a_size: detachable INTEGER_32)
+			-- Set `size' to `a_size'
+		do
+			size := a_size
+		end
+
+	set_new_location_with_number (a_number: INTEGER_32)
+			-- sets `a_number' after the name. This is done when the file was already uploaded
+		local
+			position: INTEGER_32
+			new_name: STRING_8
+			c: CHARACTER_32
+		do
+			position := uploaded_file.string_representation.index_of ('.', 1)
+			create new_name.make_empty
+
+			new_name := uploaded_file.string_representation.head (position-1)
+			new_name.append ("_(" + a_number.out + ")")
+			new_name.append (uploaded_file.string_representation.substring (position, uploaded_file.string_representation.count))
+
+			location := uploads_location.extended (new_name)
 		end
 
 feature -- Basic operation
