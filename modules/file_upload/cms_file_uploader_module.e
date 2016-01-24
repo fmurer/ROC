@@ -112,6 +112,7 @@ feature -- Access: router
 		do
 			map_uri_template_agent (a_router, "/upload/", agent execute_upload (?, ?, a_api), Void) -- Accepts any method GET, HEAD, POST, PUT, DELETE, ...
 			map_uri_template_agent (a_router, "/upload/{filename}", agent display_uploaded_file_info (?, ?, a_api), a_router.methods_get)
+			map_uri_template_agent (a_router, "/upload/remove/{filename}", agent remove (?, ?, a_api), a_router.methods_get)
 		end
 
 feature -- Hooks
@@ -281,7 +282,7 @@ feature -- Handler
 
 				a_output.append ("<strong>All uploaded files:</strong>%N")
 				a_output.append ("<table class=%"directory-index%">%N")
-				a_output.append ("<tr><th>Filename</th><th>Uploading Time</th><th>User</th><th>Size</th><th></th></tr>%N")
+				a_output.append ("<tr><th>Filename</th><th>Uploading Time</th><th>User</th><th>Size</th><th></th><th></th></tr>%N")
 
 				create d.make_with_path (p)
 				if d.exists then
@@ -356,7 +357,7 @@ feature -- Handler
 									-- add size
 								a_output.append ("<td>")
 								if not meta_size.is_empty then
-									a_output.append (meta_size + "bytes")
+									a_output.append (meta_size + " bytes")
 								else
 									a_output.append ("NA")
 								end
@@ -365,11 +366,22 @@ feature -- Handler
 
 									-- add download link
 								a_output.append ("<td>")
-								a_output.append ("<a href=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%"> download </a>")
+								a_output.append ("<form action=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%">")
+								a_output.append ("<button type=%"submit%">Download</button>")
+								a_output.append ("</form>")
+--								a_output.append ("<a href=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%"> download </a>")
 								a_output.append ("</td>%N")
 
 
+									-- add remove button
+								a_output.append ("<td>")
+								a_output.append ("<form action=%"" + req.script_url ("/upload/remove/" + f.filename) + "%">")
+								a_output.append ("<button type=%"submit%">Remove</button>")
+								a_output.append ("</form>")
+								a_output.append ("</td>%N")
+
 								a_output.append ("</tr>%N")
+
 							end
 						end
 					end
@@ -408,6 +420,39 @@ feature -- Handler
 
 				raw.close
 		end
+
+		remove (req: WSF_REQUEST; res: WSF_RESPONSE; api: CMS_API)
+			local
+				raw_file, meta_file: RAW_FILE
+				body: STRING
+				r: CMS_RESPONSE
+				path, meta_path: PATH
+			do
+				if attached {WSF_STRING} req.path_parameter ("filename") as p_filename then
+					if attached file_upload_api as l_file_upload_api then
+						create path.make_from_string (l_file_upload_api.uploads_location.extended (p_filename.value).out)
+						create meta_path.make_from_string (l_file_upload_api.metadata_location.extended (p_filename.value + ".cms-metadata").out)
+					else
+						create path.make_empty
+						create meta_path.make_empty
+					end
+
+					create raw_file.make_with_path (path)
+					create meta_file.make_with_path (meta_path)
+
+					raw_file.delete
+					meta_file.delete
+				end
+
+				create {GENERIC_VIEW_CMS_RESPONSE} r.make (req, res, api)
+				create body.make_empty
+
+				body.append ("<h3>The file has been removed. Please return by clicking <a href=%"" + req.script_url ("/upload/") + "%">here</a></h3>")
+
+				r.set_main_content (body)
+				r.execute
+			end
+
 feature -- Mapping helper: uri template agent (analogue to the demo-module)
 
 	map_uri_template (a_router: WSF_ROUTER; a_tpl: STRING; h: WSF_URI_TEMPLATE_HANDLER; rqst_methods: detachable WSF_REQUEST_METHODS)
