@@ -65,32 +65,9 @@ feature {CMS_API}-- Module management
 	install (api: CMS_API)
 			-- install the module
 		local
-			sql: STRING
 			l_file_upload_api: like file_upload_api
 			d: DIRECTORY
 		do
-				-- create a database table
-			if attached {CMS_STORAGE_SQL_I} api.storage as l_sql_storage then
-
-					-- FIXME: This is not used, is it planned in the future?
-
-				if not l_sql_storage.sql_table_exists ("file_upload_table") then
-					sql := "[
-CREATE TABLE file_upload_table(
-  `id` VARCHAR(255) PRIMARY KEY NOT NULL,
-  `name` VARCHAR(100) NOT NULL,
-  `user` VARCHAR(100) NOT NULL,
-  `uploaded_date` DATE,
-  `size` INTEGER
-);
-					]"
-					l_sql_storage.sql_execute_script (sql, Void)
-					if l_sql_storage.has_error then
-						api.logger.put_error ("Could not initialize database for file uploader module", generating_type)
-					end
-				end
-			end
-
 			create l_file_upload_api.make (api)
 			create d.make_with_path (l_file_upload_api.uploads_location)
 			if not d.exists then
@@ -127,10 +104,10 @@ feature -- Hooks
 			link: CMS_LOCAL_LINK
 		do
 			-- login in demo did somehow not work
-			-- if a_response.has_permission ("upload files") then
+			if a_response.has_permission ("upload files") then
 				create link.make ("Upload", "upload/")
 				a_menu_system.primary_menu.extend (link)
-			-- end
+			end
 		end
 
 feature -- Handler
@@ -147,7 +124,10 @@ feature -- Handler
 			body: STRING_8
 			r: CMS_RESPONSE
 			f: CMS_FILE
+			meta_file: RAW_FILE
 			fn: READABLE_STRING_32
+			meta_user, meta_size, meta_time, meta_type: STRING
+			size: INTEGER
 		do
 			check req.is_get_request_method end
 			create {GENERIC_VIEW_CMS_RESPONSE} r.make (req, res, api)
@@ -160,23 +140,75 @@ feature -- Handler
 				if attached file_upload_api as l_file_upload_api then
 					f := l_file_upload_api.new_uploads_file (create {PATH}.make_from_string (fn))
 
-						-- FIXME: get CMS information related to this file ... owner, ...
-					body.append ("<p>Open the media <a href=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%">")
-					body.append (api.html_encoded (f.filename))
-					body.append ("</a>.</p>%N")
+					body.append ("<table><tr>")
 
 					if attached f.location.extension as ext then
 						if
 							ext.is_case_insensitive_equal_general ("png")
 							or ext.is_case_insensitive_equal_general ("jpg")
 						then
-							body.append ("<div><img src=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%" /></div>")
+							body.append ("<td><img src=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%" /></td>")
+						else
+							-- add default thumbnail
+							body.append ("<td><img src=%"" + req.script_url ("/files/uploaded_files/.thumbnails/file-logo.png") + "%" /></td>")
 						end
 					end
+
+					create meta_file.make_with_path (l_file_upload_api.metadata_location.extended (fn).appended_with_extension ("cms-metadata"))
+					-- read metadata out
+					if meta_file.exists and then meta_file.is_access_readable then
+						meta_file.open_read
+
+						meta_file.read_line
+						create meta_user.make_from_string (meta_file.last_string)
+
+						meta_file.read_line
+						create meta_time.make_from_string (meta_file.last_string)
+
+						meta_file.read_line
+						create meta_size.make_from_string (meta_file.last_string)
+
+						meta_file.read_line
+						create meta_type.make_from_string (meta_file.last_string)
+
+						meta_file.close
+					else
+						create meta_user.make_empty
+						create meta_time.make_empty
+						create meta_size.make_empty
+						create meta_type.make_empty
+					end
+
+					body.append ("<td>")
+					body.append ("<strong>User: </strong>" + meta_user + "%N <br>")
+					body.append ("<strong>Upload Time: </strong>" + meta_time + "%N <br>")
+
+					if not meta_size.is_empty then
+						size := meta_size.to_integer
+						if size >= 1000000 then
+							size := size // 1000000
+							body.append ("<strong> File Size: </strong>" + size.out + " MB %N <br>")
+						else
+							if size >= 1000 then
+								size := size // 1000
+								body.append ("<strong> File Size: </strong>" + size.out + " kB %N <br>")
+							else
+								body.append ("<strong> File Size: </strong>" + size.out + " bytes %N <br>")
+							end
+						end
+					else
+						body.append ("NA %N <br>")
+					end
+
+					body.append ("<strong>File Type: </strong>" + meta_type + "%N <br>")
+					body.append ("<br><br>")
+					body.append ("<button><a class=%"download-button%" href=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%" download>Download</a></button>%N")
+					body.append ("</td>")
+					body.append ("</tr></table>")
 				end
 				body.append ("%N</div>%N")
 			end
-			r.add_to_primary_tabs (create {CMS_LOCAL_LINK}.make ("Uploaded files", "upload/"))
+			r.add_to_primary_tabs (create {CMS_LOCAL_LINK}.make ("back", "upload/"))
 			r.set_main_content (body)
 			r.execute
 		end
@@ -191,14 +223,19 @@ feature -- Handler
 				body.append ("<h1> Upload files </h1>%N")
 
 				create {GENERIC_VIEW_CMS_RESPONSE} r.make (req, res, api)
+
+					-- set style
+					-- FIXME what is wrong here?
+				r.add_style (api.module_location (Current).extended ("site/files/css/style_upload.css").out, "all")
+
 				if r.has_permission ("upload files") then
 						-- create body
 					body.append ("<p>Please choose some file(s) to upload.</p>")
 
 						-- create form to choose files and upload them
 					body.append ("<form action=%"" + req.script_url ("/upload/") + "%" enctype=%"multipart/form-data%" method=%"POST%"> %N")
-					body.append ("<input name=%"file-name[]%" type=%"file%" multiple>")
-					body.append ("<button type=submit>Upload</button>%N")
+					body.append ("<input name=%"file-name[]%" type=%"file%" multiple />")
+					body.append ("<button type=%"submit%">Upload</button>%N")
 					body.append ("</form><br>%N")
 
 					if req.is_post_request_method then
@@ -213,11 +250,6 @@ feature -- Handler
 				append_uploaded_file_album_to (req, api, body)
 
 				r.set_main_content (body)
-
-					-- set style
-					-- FIXME what is wrong here?
-				r.add_style (api.module_location (Current).extended ("site/files/css/style_upload.css").out, "all")
-
 			else
 				create {BAD_REQUEST_ERROR_CMS_RESPONSE} r.make (req, res, api)
 			end
@@ -229,8 +261,6 @@ feature -- Handler
 		local
 			l_uploaded_file: CMS_UPLOADED_FILE
 			uf: WSF_UPLOADED_FILE
-			raw: RAW_FILE
-			upload_time: DATE_TIME
 		do
 			if attached file_upload_api as l_file_upload_api then
 					-- if has uploaded files, then store them
@@ -250,10 +280,10 @@ feature -- Handler
 
 							-- create medadata file
 						l_uploaded_file.set_size (uf.size)
+						l_uploaded_file.set_type (uf.content_type)
+
 						create_metadata_file (l_uploaded_file, l_file_upload_api, req)
 
-
-							-- FIXME: display for information, about the new disk filename.
 						if l_file_upload_api.error_handler.has_error then
 							a_output.append (" <span class=%"error%">: upload failed!</span>")
 						end
@@ -271,10 +301,8 @@ feature -- Handler
 			p: PATH
 			rel: PATH
 			meta_file: RAW_FILE
-			meta_user: STRING
-			meta_time: STRING
-			meta_size: STRING
-			file_name: STRING
+			meta_user, meta_time, meta_size, file_name: STRING
+			size: INTEGER
 		do
 			if attached file_upload_api as l_file_upload_api then
 				create rel.make_from_string (l_file_upload_api.uploads_directory_name)
@@ -301,10 +329,6 @@ feature -- Handler
 							if not f.is_directory then
 
 								create file_name.make_from_string (f.filename)
-
-	--							a_output.append ("<a href=%"" + api.percent_encoded (f.filename) + "%">")
-	--							a_output.append (api.html_encoded (f.filename))
-	--							a_output.append ("</a>")
 
 								create meta_file.make_with_path (l_file_upload_api.metadata_location.extended (file_name).appended_with_extension ("cms-metadata"))
 
@@ -357,21 +381,27 @@ feature -- Handler
 									-- add size
 								a_output.append ("<td>")
 								if not meta_size.is_empty then
-									a_output.append (meta_size + " bytes")
+									size := meta_size.to_integer
+									if size >= 1000000 then
+										size := size // 1000000
+										a_output.append (size.out + " MB")
+									else
+										if size >= 1000 then
+											size := size // 1000
+											a_output.append (size.out + " kB")
+										else
+											a_output.append (size.out + " bytes")
+										end
+									end
 								else
 									a_output.append ("NA")
 								end
 								a_output.append ("</td>%N")
 
-
 									-- add download link
 								a_output.append ("<td>")
-								a_output.append ("<form action=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%">")
-								a_output.append ("<button type=%"submit%">Download</button>")
-								a_output.append ("</form>")
---								a_output.append ("<a href=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%"> download </a>")
+								a_output.append ("<button><a class=%"download-button%" href=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%" download>Download</a></button>%N")
 								a_output.append ("</td>%N")
-
 
 									-- add remove button
 								a_output.append ("<td>")
@@ -381,6 +411,22 @@ feature -- Handler
 								a_output.append ("</td>%N")
 
 								a_output.append ("</tr>%N")
+							else
+								if f.filename.at (1) /= '.' then
+
+									-- folder support not yet supported
+
+--										-- add directory identifier
+--									a_output.append ("<td>[dir]</td>%N")
+
+--									a_output.append ("<td>")
+--									a_output.append ("<a href=%"" + api.percent_encoded (f.filename) + "%">")
+--									a_output.append (api.html_encoded (f.filename))
+--									a_output.append ("</a>")
+--									a_output.append ("</td>%N")
+
+--									a_output.append ("<td></td><td></td><td></td><td></td><td></td>")
+								end
 
 							end
 						end
@@ -418,6 +464,12 @@ feature -- Handler
 				raw.put_string (uf.size.out)
 				raw.put_new_line
 
+					-- insert file type
+				if attached uf.type as type then
+					raw.put_string (type.out)
+					raw.put_new_line
+				end
+
 				raw.close
 		end
 
@@ -447,8 +499,9 @@ feature -- Handler
 				create {GENERIC_VIEW_CMS_RESPONSE} r.make (req, res, api)
 				create body.make_empty
 
-				body.append ("<h3>The file has been removed. Please return by clicking <a href=%"" + req.script_url ("/upload/") + "%">here</a></h3>")
+				body.append ("<h3>The file has been removed successfully!</a></h3>")
 
+				r.add_to_primary_tabs (create {CMS_LOCAL_LINK}.make ("back", "upload/"))
 				r.set_main_content (body)
 				r.execute
 			end

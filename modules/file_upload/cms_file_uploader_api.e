@@ -20,6 +20,8 @@ feature -- Access
 
 	metadata_directory_name: STRING = ".metadata"
 
+	thumbnail_directory_name: STRING = ".thumbnails"
+
 	uploads_location: PATH
 		do
 			Result := cms_api.files_location.extended (uploads_directory_name)
@@ -28,6 +30,11 @@ feature -- Access
 	metadata_location: PATH
 		do
 			Result := uploads_location.extended (metadata_directory_name)
+		end
+
+	thumbnail_location: PATH
+		do
+			Result := uploads_location.extended (thumbnail_directory_name)
 		end
 
 	style_location: PATH
@@ -83,7 +90,7 @@ feature -- Storage
 			end
 
 			if ut.file_path_exists (p) then
-					-- FIXME: find an alternative name for it, by appending  "-" + i.out , with i: INTEGER;
+
 				from
 					counter := 1
 				until
@@ -102,11 +109,9 @@ feature -- Storage
 					end
 				end
 				stored := f.move_to (p)
---				error_handler.add_custom_error (-1, "uploaded file storage failed", "A file with same name already exists!")
 			else
 					-- move file to path
 				stored := f.move_to (p)
-
 			end
 
 			if not stored then

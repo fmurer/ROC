@@ -50,6 +50,9 @@ feature -- Access
 	size: detachable INTEGER_32
 			-- file size
 
+	type: detachable STRING
+			-- file type
+
 feature -- Element change
 
 	set_owner (u: detachable CMS_USER)
@@ -70,12 +73,17 @@ feature -- Element change
 			size := a_size
 		end
 
+	set_type (a_type: detachable STRING)
+			-- Set `type' to `a_type'
+		do
+			type := a_type
+		end
+
 	set_new_location_with_number (a_number: INTEGER_32)
 			-- sets `a_number' after the name. This is done when the file was already uploaded
 		local
 			position: INTEGER_32
 			new_name: STRING_8
-			c: CHARACTER_32
 		do
 			position := uploaded_file.string_representation.index_of ('.', 1)
 			create new_name.make_empty
