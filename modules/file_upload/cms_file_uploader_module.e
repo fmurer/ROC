@@ -155,6 +155,9 @@ feature -- Handler
 							-- add default thumbnail
 							body.append ("<td><img src=%"" + req.script_url ("/files/uploaded_files/.thumbnails/file-logo.png") + "%" /></td>")
 						end
+					else
+							-- add default thumbnail
+						body.append ("<td><img src=%"" + req.script_url ("/files/uploaded_files/.thumbnails/file-logo.png") + "%" /></td>")
 					end
 
 					create meta_file.make_with_path (l_file_upload_api.metadata_location.extended (fn).appended_with_extension ("cms-metadata"))
