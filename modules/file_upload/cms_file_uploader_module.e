@@ -186,8 +186,18 @@ feature -- Handler
 					end
 
 					body.append ("<td>")
-					body.append ("<strong>User: </strong>" + meta_user + "%N <br>")
-					body.append ("<strong>Upload Time: </strong>" + meta_time + "%N <br>")
+					if not meta_user.is_empty then
+						body.append ("<strong>User: </strong>" + meta_user + "%N <br>")
+					else
+						body.append ("<strong>User: </strong> unknown user %N <br>")
+					end
+
+					if not meta_time.is_empty then
+						body.append ("<strong>Upload Time: </strong>" + meta_time + "%N <br>")
+					else
+						body.append ("<strong>Upload Time: </strong> NA %N <br>")
+					end
+
 
 					if not meta_size.is_empty then
 						size := meta_size.to_integer
@@ -203,12 +213,20 @@ feature -- Handler
 							end
 						end
 					else
-						body.append ("NA %N <br>")
+						body.append ("<strong>File Size: </strong> NA %N <br>")
 					end
 
-					body.append ("<strong>File Type: </strong>" + meta_type + "%N <br>")
+					if not meta_type.is_empty then
+						body.append ("<strong>File Type: </strong>" + meta_type + "%N <br>")
+					else
+						body.append ("<strong>File Type: </strong> NA %N <br>")
+					end
+
 					body.append ("<br><br>")
+
 					body.append ("<button><a class=%"download-button%" href=%"" + req.script_url ("/" + l_file_upload_api.file_link (f).location) + "%" download>Download</a></button>%N")
+					body.append ("<button><a class=%"download-button%" href=%"" + req.script_url ("/upload/remove/" + f.filename) + "%">Remove</a></button>%N")
+
 					body.append ("</td>")
 					body.append ("</tr></table>")
 				end
@@ -242,8 +260,6 @@ feature -- Handler
 
 						-- create form to choose files and upload them
 					body.append ("<form action=%"/upload/%" class=%"dropzone%" >%N")
---					body.append ("<input name=%"file-name[]%" type=%"file%" multiple />")
---					body.append ("<button type=%"submit%">Upload</button>%N")
 					body.append ("</form><br>%N")
 					body.append ("<div id=%"up-button-id%"><button><a class=%"upload-button%" href=%"/upload/%">Upload Files</a></button></div> <br>")
 
@@ -414,9 +430,7 @@ feature -- Handler
 
 									-- add remove button
 								a_output.append ("<td>")
-								a_output.append ("<form action=%"" + req.script_url ("/upload/remove/" + f.filename) + "%">")
-								a_output.append ("<button type=%"submit%">Remove</button>")
-								a_output.append ("</form>")
+								a_output.append ("<button><a class=%"download-button%" href=%"" + req.script_url ("/upload/remove/" + f.filename) + "%">Remove</a></button>%N")
 								a_output.append ("</td>%N")
 
 								a_output.append ("</tr>%N")
@@ -501,8 +515,13 @@ feature -- Handler
 					create raw_file.make_with_path (path)
 					create meta_file.make_with_path (meta_path)
 
-					raw_file.delete
-					meta_file.delete
+					if raw_file.exists then
+						raw_file.delete
+					end
+					if meta_file.exists then
+						meta_file.delete
+					end
+
 				end
 
 				create {GENERIC_VIEW_CMS_RESPONSE} r.make (req, res, api)
