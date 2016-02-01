@@ -132,6 +132,9 @@ feature -- Handler
 			check req.is_get_request_method end
 			create {GENERIC_VIEW_CMS_RESPONSE} r.make (req, res, api)
 
+				-- add style
+			r.add_style (r.url ("/module/" + name + "/files/css/style_upload.css", void), void)
+
 			create body.make_empty
 			if attached {WSF_STRING} req.path_parameter ("filename") as p_filename then
 				fn := p_filename.value
@@ -225,18 +228,21 @@ feature -- Handler
 				create {GENERIC_VIEW_CMS_RESPONSE} r.make (req, res, api)
 
 					-- set style
-					-- FIXME what is wrong here?
-				r.add_style (api.module_location (Current).extended ("site/files/css/style_upload.css").out, "all")
+				r.add_style (r.url ("/module/" + name + "/files/css/style_upload.css", void), void)
+
+					-- add JS for dropzone
+				r.add_javascript_url (r.url ("/module/" + name + "/files/javascript/dropzone.js", void))
 
 				if r.has_permission ("upload files") then
 						-- create body
 					body.append ("<p>Please choose some file(s) to upload.</p>")
 
 						-- create form to choose files and upload them
-					body.append ("<form action=%"" + req.script_url ("/upload/") + "%" enctype=%"multipart/form-data%" method=%"POST%"> %N")
-					body.append ("<input name=%"file-name[]%" type=%"file%" multiple />")
-					body.append ("<button type=%"submit%">Upload</button>%N")
+					body.append ("<form action=%"/upload/%" class=%"dropzone%" >%N")
+--					body.append ("<input name=%"file-name[]%" type=%"file%" multiple />")
+--					body.append ("<button type=%"submit%">Upload</button>%N")
 					body.append ("</form><br>%N")
+					body.append ("<div id=%"up-button-id%"><button><a class=%"upload-button%" href=%"/upload/%">Upload Files</a></button></div> <br>")
 
 					if req.is_post_request_method then
 						process_uploaded_files (req, api, body)
